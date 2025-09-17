@@ -2,10 +2,15 @@
 import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import AppProvider from "./app/AppProvider";
+import { navigationRef } from "./app/navigation/RootNavigator";
 
 // linking
 const linking = {
-  prefixes: ["http://localhost:8082", "exp://127.0.0.1:19000"],
+  prefixes: [
+    "nuntium://",             // mobile
+    "http://localhost:8081",  // web
+    "exp://127.0.0.1:19000"   // expo go
+  ],
   config: {
     screens: {
       Login: "login",
@@ -19,17 +24,17 @@ const linking = {
           Groups: "groups",
           Messages: "messages",
           Profile: "profile",
-          Help: "help",
-        },
-      },
-    },
-  },
+          Help: "help"
+        }
+      }
+    }
+  }
 };
 
 // app
 export default function App() {
   return (
-    <NavigationContainer linking={linking}>
+    <NavigationContainer ref={navigationRef} linking={linking}>
       <AppProvider />
     </NavigationContainer>
   );

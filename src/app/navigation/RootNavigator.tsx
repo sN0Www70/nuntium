@@ -1,4 +1,3 @@
-// deps
 import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
@@ -15,7 +14,6 @@ import Profile from "../screens/Profile";
 import Help from "../screens/Help";
 import { useSession } from "../auth/AuthProvider";
 
-// tabs
 const Tab = createBottomTabNavigator();
 function Tabs() {
   return (
@@ -30,23 +28,26 @@ function Tabs() {
   );
 }
 
-// stack
 const Stack = createNativeStackNavigator();
 export default function RootNavigator() {
-  const { token, loading } = useSession(); // ✅ corrige: token
+  const { session, loading, recovery } = useSession();
+
   if (loading) return null;
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {/* Auth screens */}
-      <Stack.Screen name="Login" component={AuthLogin} />
-      <Stack.Screen name="Register" component={AuthRegister} />
-      <Stack.Screen name="VerifyEmail" component={AuthVerifyEmail} />
-      <Stack.Screen name="ForgotPassword" component={ForgotPassword} />
-      <Stack.Screen name="ResetPassword" component={ResetPassword} />
-
-      {/* App quand connecté */}
-      {token && <Stack.Screen name="App" component={Tabs} />}
+      {recovery ? (
+        <Stack.Screen name="ResetPassword" component={ResetPassword} />
+      ) : session ? (
+        <Stack.Screen name="App" component={Tabs} />
+      ) : (
+        <>
+          <Stack.Screen name="Login" component={AuthLogin} />
+          <Stack.Screen name="Register" component={AuthRegister} />
+          <Stack.Screen name="VerifyEmail" component={AuthVerifyEmail} />
+          <Stack.Screen name="ForgotPassword" component={ForgotPassword} />
+        </>
+      )}
     </Stack.Navigator>
   );
 }

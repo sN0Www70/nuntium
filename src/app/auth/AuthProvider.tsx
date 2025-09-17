@@ -1,11 +1,12 @@
-// deps
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { Platform } from "react-native";
 import { supabase } from "../../core/authClient";
+import type { Session } from "@supabase/supabase-js";
 
-// types
 type SessionCtx = {
-  session: any;
+  session: Session | null;
   loading: boolean;
+  recovery: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (data: {
     firstname: string;
@@ -18,29 +19,29 @@ type SessionCtx = {
   }) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
+  clearRecovery: () => void;
 };
 
-// ctx
 const AuthContext = createContext<SessionCtx>({
   session: null,
   loading: true,
+  recovery: false,
   signIn: async () => {},
   signUp: async () => {},
   resetPassword: async () => {},
   signOut: async () => {},
+  clearRecovery: () => {},
 });
 
-// hook
 export function useSession() {
   return useContext(AuthContext);
 }
 
-// provider
 export default function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<any>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [recovery, setRecovery] = useState(false);
 
-  // init session + listener
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getSession();
@@ -48,8 +49,22 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       setLoading(false);
     })();
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, data) => {
-      setSession(data.session ?? null);
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("⚡ Auth event:", event, session);
+
+      if (event === "PASSWORD_RECOVERY") {
+        setRecovery(true);
+        setSession(session ?? null);
+        return;
+      }
+
+      if (event === "SIGNED_OUT") {
+        setSession(null);
+        setRecovery(false);
+        return;
+      }
+
+      setSession(session ?? null);
     });
 
     return () => {
@@ -57,7 +72,6 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     };
   }, []);
 
-  // sign in
   const signIn = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -67,7 +81,6 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     setSession(data.session ?? null);
   };
 
-  // sign up
   const signUp = async ({
     firstname,
     lastname,
@@ -77,34 +90,56 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     school,
     join,
   }: any) => {
+    const redirectTo =
+      Platform.OS === "web"
+        ? "http://localhost:8081/verified"
+        : "nuntium://verified";
+
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: "http://localhost:8081/verified",
+        emailRedirectTo: redirectTo,
         data: { firstname, lastname, phone, school, join },
       },
     });
     if (error) throw error;
   };
 
-  // reset password
   const resetPassword = async (email: string) => {
+    const redirectTo =
+      Platform.OS === "web"
+        ? "http://localhost:8081/reset-password"
+        : "nuntium://reset-password";
+
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: "http://localhost:8081/reset-password",
+      redirectTo,
     });
     if (error) throw error;
   };
 
-  // sign out
   const signOut = async () => {
-    await supabase.auth.signOut();
+    console.log(">>> signOut called");
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
     setSession(null);
+    setRecovery(false);
   };
+
+  const clearRecovery = () => setRecovery(false);
 
   return (
     <AuthContext.Provider
-      value={{ session, loading, signIn, signUp, resetPassword, signOut }}
+      value={{
+        session,
+        loading,
+        recovery,
+        signIn,
+        signUp,
+        resetPassword,
+        signOut,
+        clearRecovery,
+      }}
     >
       {children}
     </AuthContext.Provider>

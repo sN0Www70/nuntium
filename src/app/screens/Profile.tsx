@@ -1,22 +1,44 @@
 // deps
 import React from "react";
-import { View, StyleSheet, Text } from "react-native";
-import { Button } from "../../components/UI";
+import { View, StyleSheet } from "react-native";
+import { H1, P, Button } from "../../components/UI";
 import { useSession } from "../auth/AuthProvider";
 
-// ui
-export default function Profile(){
-  const { signOut } = useSession();
+export default function Profile() {
+  const { session, signOut } = useSession();
+
+  // user metadata
+  const user = session?.user;
+  const email = user?.email ?? "—";
+  const firstname = user?.user_metadata?.firstname ?? "";
+  const lastname = user?.user_metadata?.lastname ?? "";
+
   return (
     <View style={s.wrap}>
-      <Text style={s.h1}>Profil</Text>
-      <Button label="Se déconnecter" onPress={signOut} style={{marginTop:16}} />
+      <H1>Mon profil</H1>
+
+      <P style={{ marginTop: 12 }}>Nom : {lastname || "?"}</P>
+      <P>Prénom : {firstname || "?"}</P>
+      <P>Email : {email}</P>
+
+      <Button
+        label="Se déconnecter"
+        onPress={async () => {
+          console.log(">>> signOut called"); // debug
+          await signOut();
+          console.log(">>> après signOut, session =", session);
+        }}
+        style={{ marginTop: 24 }}
+      />
     </View>
   );
 }
 
-// styles
-const s=StyleSheet.create({
-  wrap:{flex:1,justifyContent:"center",alignItems:"center",backgroundColor:"#0f3d1e"},
-  h1:{color:"#fff",fontSize:24,fontWeight:"800"}
+const s = StyleSheet.create({
+  wrap: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#0f3d1e",
+  },
 });

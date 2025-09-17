@@ -8,12 +8,17 @@ import { supabase } from "../../core/authClient";
 // helper
 function useQueryParam(name: string) {
   const route = useRoute<any>();
-  const url: string | undefined = route?.params?.initialUrl || route?.params?.url;
+  const url: string | undefined =
+    route?.params?.initialUrl || route?.params?.url;
 
   return useMemo(() => {
     try {
       const raw =
-        url ?? (Platform.OS === "web" ? window.location.href : "http://localhost");
+        url ??
+        (Platform.OS === "web" ? window.location.href : undefined); 
+
+      if (!raw) return null;
+
       const u = new URL(raw);
 
       return (
@@ -21,7 +26,8 @@ function useQueryParam(name: string) {
         u.hash.split(`${name}=`)[1]?.split("&")[0] ||
         null
       );
-    } catch {
+    } catch (err) {
+      console.log("❌ useQueryParam error:", err);
       return null;
     }
   }, [url, name]);
@@ -87,7 +93,11 @@ export default function ResetPassword() {
           <P style={{ textAlign: "center", marginTop: 8 }}>
             Mot de passe mis à jour. Vous pouvez maintenant vous connecter.
           </P>
-          <Button label="Aller à la connexion" onPress={goLogin} style={{ marginTop: 16 }} />
+          <Button
+            label="Aller à la connexion"
+            onPress={goLogin}
+            style={{ marginTop: 16 }}
+          />
         </>
       ) : (
         <>

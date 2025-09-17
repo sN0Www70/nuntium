@@ -24,7 +24,6 @@ export default function AuthLogin() {
     try {
       setBusy(true);
       await signIn(email.trim(), password);
-      // pas besoin de nav.navigate("App"), RootNavigator bascule tout seul quand session est remplie
     } catch (e: any) {
       setErr("E-mail ou mot de passe incorrect.");
     } finally {
