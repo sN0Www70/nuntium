@@ -89,7 +89,15 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     phone,
     school,
     join,
-  }: any) => {
+  }: {
+    firstname: string;
+    lastname: string;
+    email: string;
+    password: string;
+    phone?: string;
+    school?: string;
+    join?: boolean;
+  }) => {
     const redirectTo =
       Platform.OS === "web"
         ? "http://localhost:8081/verified"
@@ -100,9 +108,16 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       password,
       options: {
         emailRedirectTo: redirectTo,
-        data: { firstname, lastname, phone, school, join },
+        data: {
+          firstname: firstname || "",
+          lastname: lastname || "",
+          phone: phone || "",
+          school: school || "",
+          join: join ? "true" : "false",
+        },
       },
     });
+
     if (error) throw error;
   };
 

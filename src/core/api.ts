@@ -1,8 +1,6 @@
-// deps
 import { ENV } from "./env";
 import { getToken } from "./storage";
 
-// helpers
 async function handle(res: Response) {
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
@@ -13,7 +11,6 @@ async function handle(res: Response) {
   return data;
 }
 
-// base
 async function req(path: string, init: RequestInit = {}) {
   const url = `${ENV.BASE_URL}${path}`;
   const token = await getToken();
@@ -25,11 +22,12 @@ async function req(path: string, init: RequestInit = {}) {
   return fetch(url, { ...init, headers }).then(handle);
 }
 
-// api
 export const api = {
-  // auth
-  register: (body: any) => req("/auth/register", { method: "POST", body: JSON.stringify(body) }),
-  verifyEmail: (body: any) => req("/auth/verify-email", { method: "POST", body: JSON.stringify(body) }),
-  login: (body: any) => req("/auth/login", { method: "POST", body: JSON.stringify(body) }),
+  register: (body: any) =>
+    req("/auth/register", { method: "POST", body: JSON.stringify(body) }),
+  verifyEmail: (body: any) =>
+    req("/auth/verify-email", { method: "POST", body: JSON.stringify(body) }),
+  login: (body: any) =>
+    req("/auth/login", { method: "POST", body: JSON.stringify(body) }),
   me: () => req("/auth/me", { method: "GET" }),
 };
