@@ -8,6 +8,8 @@ import {
   Image,
   Platform,
   TouchableOpacity,
+  Alert,
+  Switch,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { supabase } from "../../core/authClient";
@@ -28,10 +30,12 @@ export default function EditProfile({ navigation }: any) {
   const [className, setClassName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [isPrivate, setIsPrivate] = useState(false); // 🔥 confidentialité
 
   const [socialUrls, setSocialUrls] = useState<string[]>([]);
+  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
 
-  // Charger les données depuis supabase
+  // Charger le profil existant
   useEffect(() => {
     (async () => {
       if (!user?.id) return;
@@ -39,7 +43,7 @@ export default function EditProfile({ navigation }: any) {
         const { data, error } = await supabase
           .from("profiles")
           .select(
-            "firstname, lastname, username, bio, school, class, avatar_url, cover_url, social_links"
+            "firstname, lastname, username, bio, school, class, avatar_url, cover_url, social_links, is_private"
           )
           .eq("id", user.id)
           .single();
@@ -54,6 +58,7 @@ export default function EditProfile({ navigation }: any) {
         setClassName(data?.class ?? "");
         setAvatarUrl(data?.avatar_url ?? null);
         setCoverUrl(data?.cover_url ?? null);
+        setIsPrivate(data?.is_private ?? false); // 🔥
 
         const links: string[] = Array.isArray(data?.social_links)
           ? data.social_links.filter((u: any) => typeof u === "string")
@@ -68,6 +73,33 @@ export default function EditProfile({ navigation }: any) {
       }
     })();
   }, [user?.id]);
+
+  // Vérification pseudo unique
+  async function checkUsernameAvailability(username: string): Promise<boolean> {
+    if (!username.trim()) return false;
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("username", username.trim().toLowerCase())
+      .neq("id", user?.id) // exclure mon propre profil
+      .maybeSingle();
+
+    return !data && !error;
+  }
+
+  // Vérif live quand on tape un pseudo
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (!username.trim()) {
+        setUsernameAvailable(null);
+        return;
+      }
+      const available = await checkUsernameAvailability(username);
+      setUsernameAvailable(available);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [username]);
 
   // Upload avatar / cover
   const handleImagePick = async (type: "avatar" | "cover") => {
@@ -134,15 +166,22 @@ export default function EditProfile({ navigation }: any) {
   // Sauvegarde
   const handleSave = async () => {
     if (!user) return;
+
+    if (!usernameAvailable) {
+      Alert.alert("Pseudo déjà pris", "Choisissez un autre pseudo.");
+      return;
+    }
+
     try {
       const updates: any = {
         firstname,
         lastname,
-        username,
+        username: username.trim().toLowerCase(),
         bio,
         school,
         avatar_url: avatarUrl,
         cover_url: coverUrl,
+        is_private: isPrivate, // 🔥 enregistrement
         updated_at: new Date().toISOString(),
         social_links: socialUrls.map((s) => s.trim()).filter(Boolean),
       };
@@ -193,6 +232,23 @@ export default function EditProfile({ navigation }: any) {
       <TextInput placeholder="Prénom" style={styles.input} value={firstname} onChangeText={setFirstname} />
       <TextInput placeholder="Nom" style={styles.input} value={lastname} onChangeText={setLastname} />
       <TextInput placeholder="Pseudo" style={styles.input} value={username} onChangeText={setUsername} />
+
+      {username.length > 0 && (
+        <Text
+          style={{
+            color: usernameAvailable ? "green" : "red",
+            marginBottom: 12,
+            fontWeight: "600",
+          }}
+        >
+          {usernameAvailable === null
+            ? ""
+            : usernameAvailable
+            ? "✅ Disponible"
+            : "❌ Déjà pris"}
+        </Text>
+      )}
+
       <TextInput
         placeholder="Bio"
         style={[styles.input, { height: 90 }]}
@@ -202,6 +258,12 @@ export default function EditProfile({ navigation }: any) {
       />
       <TextInput placeholder="École" style={styles.input} value={school} onChangeText={setSchool} />
       <TextInput placeholder="Classe" style={styles.input} value={className} onChangeText={setClassName} />
+
+      {/* Confidentialité */}
+      <View style={styles.privacyRow}>
+        <Text style={styles.privacyLabel}>Compte privé</Text>
+        <Switch value={isPrivate} onValueChange={setIsPrivate} />
+      </View>
 
       {/* Réseaux sociaux */}
       <View style={{ marginTop: 8 }}>
@@ -227,7 +289,12 @@ export default function EditProfile({ navigation }: any) {
       </View>
 
       {/* Actions */}
-      <Button label="Sauvegarder" onPress={handleSave} variant="primary" />
+      <Button
+        label="Sauvegarder"
+        onPress={handleSave}
+        variant="primary"
+        disabled={usernameAvailable === false}
+      />
       <Button label="Annuler" onPress={() => navigation.goBack()} variant="danger" />
     </ScrollView>
   );
@@ -262,4 +329,15 @@ const styles = StyleSheet.create({
   avatar: { width: 90, height: 90, borderRadius: 45 },
   cover: { width: "100%", height: 140, borderRadius: 12 },
   socialRow: { flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 8 },
+  privacyRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginVertical: 16,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: "#eee",
+  },
+  privacyLabel: { fontSize: 16, color: "#111", fontWeight: "600" },
 });

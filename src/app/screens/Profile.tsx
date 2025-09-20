@@ -136,9 +136,9 @@ export default function Profile() {
     }, [load])
   );
 
-  // --- follow / unfollow
+  // --- follow / unfollow / demande
   async function toggleFollow() {
-    if (!session?.user?.id || isMe) return;
+    if (!session?.user?.id || isMe || !profile) return;
     setBusy(true);
     try {
       if (amFollowing) {
@@ -146,17 +146,23 @@ export default function Profile() {
         setAmFollowing(false);
         setFollowers((x) => Math.max(0, x - 1));
       } else {
-        await follow(session.user.id, viewedUserId);
-        setAmFollowing(true);
-        setFollowers((x) => x + 1);
+        // si compte privé => follow_request
+        const me = await getProfile(session.user.id);
+        if (profile.is_private) {
+          await insertNotification("follow_request" as any, session.user.id, viewedUserId, {
+            actor_name: `${me?.firstname || ""} ${me?.lastname || ""}`.trim(),
+            actor_avatar: me?.avatar_url || null,
+          });
+        } else {
+          await follow(session.user.id, viewedUserId);
+          setAmFollowing(true);
+          setFollowers((x) => x + 1);
 
-        // notif "follow"
-        await insertNotification("follow", session.user.id, viewedUserId, {
-          actor_name: `${session?.user?.user_metadata?.firstname || ""} ${
-            session?.user?.user_metadata?.lastname || ""
-          }`.trim(),
-          actor_avatar: profile?.avatar_url || null,
-        });
+          await insertNotification("follow", session.user.id, viewedUserId, {
+            actor_name: `${me?.firstname || ""} ${me?.lastname || ""}`.trim(),
+            actor_avatar: me?.avatar_url || null,
+          });
+        }
       }
     } finally {
       setBusy(false);
@@ -214,6 +220,8 @@ export default function Profile() {
     : profile.social_links && typeof profile.social_links === "object"
     ? Object.values(profile.social_links).filter((u: any) => typeof u === "string")
     : [];
+
+  const canSeeFullProfile = !profile.is_private || isMe || amFollowing;
 
   return (
     <View style={[s.safe, { paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : insets.top }]}>
@@ -368,7 +376,11 @@ export default function Profile() {
                 disabled={busy}
               >
                 <P style={s.bannerBtnTxt}>
-                  {amFollowing ? "Abonné(e)" : "S'abonner"}
+                  {amFollowing
+                    ? "Abonné(e)"
+                    : profile.is_private
+                    ? "Demander"
+                    : "S'abonner"}
                 </P>
               </TouchableOpacity>
             </View>
@@ -420,55 +432,70 @@ export default function Profile() {
         {/* --- CONTENT --- */}
         {tab === "profile" ? (
           <View style={s.card}>
-            {profile.bio ? (
-              <View style={s.section}>
-                <P style={s.lbl}>À propos</P>
-                <P style={s.val}>{profile.bio}</P>
-              </View>
-            ) : null}
+            {canSeeFullProfile ? (
+              <>
+                {profile.bio ? (
+                  <View style={s.section}>
+                    <P style={s.lbl}>À propos</P>
+                    <P style={s.val}>{profile.bio}</P>
+                  </View>
+                ) : null}
 
-            {profile.class || profile.school ? (
+                {profile.class || profile.school ? (
+                  <View style={s.section}>
+                    <P style={s.lbl}>Classe / École</P>
+                    <P style={s.val}>
+                      {[profile.class, profile.school].filter(Boolean).join(" • ")}
+                    </P>
+                  </View>
+                ) : null}
+
+                {links.length ? (
+                  <View style={s.section}>
+                    <P style={s.lbl}>Réseaux</P>
+                    <View style={s.socialWrap}>
+                      {links.map((url, i) => {
+                        const kind = guessNetwork(url);
+                        const ic = iconMap[kind] || iconMap.unknown;
+                        return (
+                          <TouchableOpacity
+                            key={i}
+                            style={s.socialPill}
+                            onPress={() => Linking.openURL(url)}
+                          >
+                            <FontAwesome name={ic.name} size={18} color={ic.color || "#444"} />
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                ) : null}
+
+                <View style={s.section}>
+                  <P style={s.lbl}>A rejoint le</P>
+                  <P style={s.val}>
+                    {profile.created_at
+                      ? new Date(profile.created_at).toLocaleDateString()
+                      : "-"}
+                  </P>
+                </View>
+              </>
+            ) : (
               <View style={s.section}>
-                <P style={s.lbl}>Classe / École</P>
                 <P style={s.val}>
-                  {[profile.class, profile.school].filter(Boolean).join(" • ")}
+                  Compte privé, devenez ami avec {profile.firstname || "cet utilisateur"} pour
+                  voir son contenu.
                 </P>
               </View>
-            ) : null}
-
-            {links.length ? (
-              <View style={s.section}>
-                <P style={s.lbl}>Réseaux</P>
-                <View style={s.socialWrap}>
-                  {links.map((url, i) => {
-                    const kind = guessNetwork(url);
-                    const ic = iconMap[kind] || iconMap.unknown;
-                    return (
-                      <TouchableOpacity
-                        key={i}
-                        style={s.socialPill}
-                        onPress={() => Linking.openURL(url)}
-                      >
-                        <FontAwesome name={ic.name} size={18} color={ic.color || "#444"} />
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            ) : null}
-
-            <View style={s.section}>
-              <P style={s.lbl}>A rejoint le</P>
-              <P style={s.val}>
-                {profile.created_at
-                  ? new Date(profile.created_at).toLocaleDateString()
-                  : "-"}
-              </P>
-            </View>
+            )}
           </View>
         ) : (
           <View style={s.card}>
-            <P>Publications à venir…</P>
+            {canSeeFullProfile ? (
+              <P>Publications à venir…</P>
+            ) : (
+              <P>Compte privé — contenu masqué</P>
+            )}
           </View>
         )}
       </ScrollView>

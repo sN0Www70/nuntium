@@ -1,7 +1,6 @@
-// src/app/components/NotificationToast.tsx
 import React, { useEffect, useRef } from "react";
 import { Animated, TouchableOpacity, StyleSheet, Platform } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context"; // ✅
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { P } from "./UI";
 
 type Props = {
@@ -19,7 +18,7 @@ export default function NotificationToast({
 }: Props) {
   const slide = useRef(new Animated.Value(-80)).current;
   const opacity = useRef(new Animated.Value(0)).current;
-  const insets = useSafeAreaInsets(); // ✅ récupère la hauteur du notch / status bar
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     Animated.parallel([
@@ -46,7 +45,7 @@ export default function NotificationToast({
         {
           transform: [{ translateY: slide }],
           opacity,
-          top: Platform.OS === "web" ? 8 : insets.top + 8, // ✅ adapte pour web vs mobile
+          top: Platform.OS === "web" ? 8 : insets.top + 8,
         },
       ]}
       pointerEvents="box-none"

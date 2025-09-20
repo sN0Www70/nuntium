@@ -70,15 +70,22 @@ export default function NotificationProvider({
         console.log("🔔 Found new notifications via polling:", data);
 
         data.forEach((row: NotificationRow) => {
+          let message: string | null = null;
+
           if (row.type === "follow") {
-            const message = `${row.payload?.actor_name || "Quelqu'un"} s'est abonné à vous`;
+            message = `${row.payload?.actor_name || "Quelqu'un"} s'est abonné à vous`;
+          } else if (row.type === "follow_request") {
+            message = `${row.payload?.actor_name || "Quelqu'un"} veut s'abonner à vous`;
+          }
+
+          if (message) {
             console.log("🔔 Showing toast:", message);
             setToast(message);
           }
         });
 
-        setUnread(prev => prev + data.length);
-        
+        setUnread((prev) => prev + data.length);
+
         lastCheckRef.current = data[0].created_at;
       }
     } catch (error) {
@@ -93,7 +100,10 @@ export default function NotificationProvider({
       }
     };
 
-    const subscription = AppState.addEventListener("change", handleAppStateChange);
+    const subscription = AppState.addEventListener(
+      "change",
+      handleAppStateChange
+    );
     return () => subscription?.remove();
   }, [checkForNewNotifications]);
 
@@ -109,7 +119,7 @@ export default function NotificationProvider({
 
     // compteur initial
     reloadUnread();
-    
+
     // timestamp
     lastCheckRef.current = new Date().toISOString();
 

@@ -1,6 +1,10 @@
 import { supabase } from "./authClient";
 
-export type NotificationType = "follow";
+export type NotificationType =
+  | "follow"
+  | "follow_request"
+  | "follow_accepted"
+  | "follow_rejected";
 
 export type NotificationRow = {
   id: string;
@@ -12,6 +16,7 @@ export type NotificationRow = {
   created_at: string;
 };
 
+// --- INSERT ---
 export async function insertNotification(
   type: NotificationType,
   actor_id: string,
@@ -30,11 +35,17 @@ export async function insertNotification(
     console.log("🔔 insertNotification: insert error:", error);
     return null;
   }
-  
+
+  if (!["follow", "follow_request", "follow_accepted", "follow_rejected"].includes(data.type)) {
+    console.warn("⚠️ Type inconnu inséré, forçage en follow_request");
+    data.type = "follow_request";
+  }
+
   console.log("🔔 Notification inserted successfully:", data);
   return data;
 }
 
+// --- LISTE ---
 export async function getNotifications(
   userId: string,
   { limit = 50, from = 0 }: { limit?: number; from?: number } = {}
@@ -53,6 +64,7 @@ export async function getNotifications(
   return data || [];
 }
 
+// --- MARQUER COMME LU ---
 export async function markAsRead(ids: string[]) {
   if (!ids.length) return;
   const { error } = await supabase
@@ -71,6 +83,7 @@ export async function markAllAsRead(userId: string) {
   if (error) console.log("🔔 markAllAsRead error:", error);
 }
 
+// --- COMPTE NON LU ---
 export async function unreadCount(userId: string): Promise<number> {
   const { count, error } = await supabase
     .from("notifications")
@@ -85,25 +98,94 @@ export async function unreadCount(userId: string): Promise<number> {
   return count;
 }
 
+// --- ACTIONS SUR LES DEMANDES (RPC) ---
+export async function acceptFollowRequest(n: NotificationRow) {
+  const { error } = await supabase.rpc("accept_follow_request", {
+    follower: n.actor_id,
+    followed: n.target_id,
+  });
+
+  if (error) {
+    console.error("❌ acceptFollowRequest error:", error);
+    throw error;
+  }
+
+  const { data: accepterProfile } = await supabase
+    .from("profiles")
+    .select("firstname, lastname, avatar_url")
+    .eq("id", n.target_id)
+    .maybeSingle();
+
+  await insertNotification(
+    "follow_accepted",
+    n.target_id,
+    n.actor_id,
+    {
+      actor_name: accepterProfile
+        ? `${accepterProfile.firstname} ${accepterProfile.lastname}`
+        : "Un utilisateur",
+      actor_avatar: accepterProfile?.avatar_url || null,
+    }
+  );
+}
+
+export async function rejectFollowRequest(n: NotificationRow) {
+  const { error } = await supabase.rpc("reject_follow_request", {
+    follower: n.actor_id,
+    followed: n.target_id,
+  });
+
+  if (error) {
+    console.error("❌ rejectFollowRequest error:", error);
+    throw error;
+  }
+
+  const { data: rejecterProfile } = await supabase
+    .from("profiles")
+    .select("firstname, lastname, avatar_url")
+    .eq("id", n.target_id)
+    .maybeSingle();
+
+  await insertNotification(
+    "follow_rejected",
+    n.target_id,
+    n.actor_id,
+    {
+      actor_name: rejecterProfile
+        ? `${rejecterProfile.firstname} ${rejecterProfile.lastname}`
+        : "Un utilisateur",
+      actor_avatar: rejecterProfile?.avatar_url || null,
+    }
+  );
+}
+
+// --- SUBSCRIBE REALTIME ---
 export function subscribeToUserNotifications(
   userId: string,
   onInsert: (row: NotificationRow) => void
 ) {
   console.log("🔔 Creating realtime subscription for user:", userId);
-  
+
   const channel = supabase
     .channel(`notif_user_${userId}`)
     .on(
       "postgres_changes",
-      { 
-        event: "INSERT", 
-        schema: "public", 
-        table: "notifications", 
-        filter: `target_id=eq.${userId}` 
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "notifications",
+        filter: `target_id=eq.${userId}`,
       },
       (payload: any) => {
         console.log("🔔 Realtime payload received:", payload);
-        onInsert(payload.new as NotificationRow);
+
+        const notif = payload.new as NotificationRow;
+
+        if (!["follow", "follow_request", "follow_accepted", "follow_rejected"].includes(notif.type)) {
+          notif.type = "follow_request";
+        }
+
+        onInsert(notif);
       }
     )
     .subscribe((status) => {
