@@ -9,7 +9,7 @@ const linking = {
   prefixes: [
     "nuntium://",             // mobile
     "http://localhost:8081",  // web
-    "exp://127.0.0.1:19000"   // expo go
+    "exp://127.20.10.4:8081"   // expo go
   ],
   config: {
     screens: {

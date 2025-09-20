@@ -14,8 +14,8 @@ import Groups from "../screens/Groups";
 import Messages from "../screens/Messages";
 import Profile from "../screens/Profile";
 import Help from "../screens/Help";
+import NotificationsScreen from "../screens/Notifications"; 
 
-import CompleteProfile from "../screens/CompleteProfile";
 import EditProfile from "../screens/EditProfile";
 
 import { useSession } from "../auth/AuthProvider";
@@ -49,8 +49,8 @@ export default function RootNavigator() {
       ) : session ? (
         <Stack.Group>
           <Stack.Screen name="App" component={Tabs} />
-          <Stack.Screen name="CompleteProfile" component={CompleteProfile} />
           <Stack.Screen name="EditProfile" component={EditProfile} />
+          <Stack.Screen name="Notifications" component={NotificationsScreen} /> 
         </Stack.Group>
       ) : (
         <Stack.Group>

@@ -7,9 +7,9 @@ import {
   ScrollView,
   Linking,
   TextInput,
-  SafeAreaView,
   Platform,
   StatusBar,
+  FlatList,
 } from "react-native";
 import { P } from "../../components/UI";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
@@ -25,7 +25,11 @@ import {
   Profile as ProfileType,
 } from "../../core/profileApi";
 import { FontAwesome } from "@expo/vector-icons";
+import { insertNotification } from "../../core/notificationsApi";
+import { useNotifications } from "../notifications/NotificationProvider";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+// --- réseaux sociaux
 type Known =
   | "instagram"
   | "twitter"
@@ -81,6 +85,8 @@ export default function Profile() {
   const nav = useNavigation();
   const route = useRoute<any>();
   const { session } = useSession();
+  const { unread } = useNotifications();
+  const insets = useSafeAreaInsets();
 
   const viewedUserId = route.params?.userId || session?.user?.id;
   const isMe = viewedUserId === session?.user?.id;
@@ -95,7 +101,10 @@ export default function Profile() {
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [results, setResults] = useState<ProfileType[]>([]);
+  const [searching, setSearching] = useState(false);
 
+  // --- chargement profil
   const load = useCallback(async () => {
     if (!viewedUserId) return;
     try {
@@ -127,6 +136,7 @@ export default function Profile() {
     }, [load])
   );
 
+  // --- follow / unfollow
   async function toggleFollow() {
     if (!session?.user?.id || isMe) return;
     setBusy(true);
@@ -139,17 +149,50 @@ export default function Profile() {
         await follow(session.user.id, viewedUserId);
         setAmFollowing(true);
         setFollowers((x) => x + 1);
+
+        // notif "follow"
+        await insertNotification("follow", session.user.id, viewedUserId, {
+          actor_name: `${session?.user?.user_metadata?.firstname || ""} ${
+            session?.user?.user_metadata?.lastname || ""
+          }`.trim(),
+          actor_avatar: profile?.avatar_url || null,
+        });
       }
     } finally {
       setBusy(false);
     }
   }
 
+  // --- logout
   async function handleLogout() {
     await supabase.auth.signOut();
     (nav as any).reset({ index: 0, routes: [{ name: "Login" }] });
   }
 
+  // --- recherche
+  async function searchProfiles(q: string) {
+    setSearchQuery(q);
+    if (!q.trim()) {
+      setResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, firstname, lastname, username, avatar_url")
+      .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,username.ilike.%${q}%`)
+      .limit(10);
+
+    if (error) {
+      console.log("❌ Search error:", error);
+      setResults([]);
+    } else {
+      setResults(data || []);
+    }
+  }
+
+  // --- rendu
   if (loading) {
     return (
       <View style={[s.container, { justifyContent: "center", alignItems: "center" }]}>
@@ -173,12 +216,16 @@ export default function Profile() {
     : [];
 
   return (
-    <SafeAreaView style={s.safe}>
+    <View style={[s.safe, { paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : insets.top }]}>
       <ScrollView style={s.container} contentContainerStyle={{ paddingBottom: 40 }}>
         {/* --- TOP BAR --- */}
         <View style={s.topBar}>
-          <TouchableOpacity style={s.iconBtn}>
+          <TouchableOpacity
+            style={s.iconBtn}
+            onPress={() => nav.navigate("Notifications" as never)}
+          >
             <FontAwesome name="bell" size={20} color="#fff" />
+            {unread > 0 && <View style={s.badge} />}
           </TouchableOpacity>
 
           <View style={s.logoWrap}>
@@ -192,33 +239,24 @@ export default function Profile() {
           <View style={s.rightMenu}>
             <TouchableOpacity
               style={s.iconBtn}
-              onPress={() => setMenuOpen(prev => !prev)}
+              onPress={() => setMenuOpen((prev) => !prev)}
             >
               <FontAwesome name="bars" size={22} color="#fff" />
             </TouchableOpacity>
-            
+
             {menuOpen && (
               <View style={s.dropdown}>
-                <TouchableOpacity 
-                  style={s.dropdownItem}
-                  onPress={() => setMenuOpen(false)}
-                >
+                <TouchableOpacity style={s.dropdownItem} onPress={() => setMenuOpen(false)}>
                   <P>Paramètres</P>
                 </TouchableOpacity>
-                <TouchableOpacity 
-                  style={s.dropdownItem}
-                  onPress={() => setMenuOpen(false)}
-                >
+                <TouchableOpacity style={s.dropdownItem} onPress={() => setMenuOpen(false)}>
                   <P>Mes favoris</P>
                 </TouchableOpacity>
-                <TouchableOpacity 
-                  style={s.dropdownItem}
-                  onPress={() => setMenuOpen(false)}
-                >
+                <TouchableOpacity style={s.dropdownItem} onPress={() => setMenuOpen(false)}>
                   <P>Aide</P>
                 </TouchableOpacity>
-                <TouchableOpacity 
-                  style={s.dropdownItem} 
+                <TouchableOpacity
+                  style={s.dropdownItem}
                   onPress={() => {
                     setMenuOpen(false);
                     handleLogout();
@@ -232,24 +270,112 @@ export default function Profile() {
         </View>
 
         {/* --- SEARCH BAR --- */}
-        <View style={s.searchBar}>
-          <TextInput
-            placeholder="Rechercher..."
-            placeholderTextColor="#999"
-            style={s.searchInput}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
+        <View style={s.searchWrap}>
+          <View style={s.searchBar}>
+            <TextInput
+              placeholder="Rechercher un utilisateur..."
+              placeholderTextColor="#999"
+              style={s.searchInput}
+              value={searchQuery}
+              onChangeText={searchProfiles}
+              autoCorrect={false}
+              autoCapitalize="none"
+            />
+          </View>
+
+          {searching && (
+            <>
+              <TouchableOpacity
+                style={s.overlay}
+                activeOpacity={1}
+                onPress={() => {
+                  setSearching(false);
+                  setResults([]);
+                }}
+              />
+              <View style={s.searchResults}>
+                {results.length > 0 ? (
+                  <FlatList
+                    data={results}
+                    keyExtractor={(item) => item.id}
+                    renderItem={({ item }) => (
+                      <TouchableOpacity
+                        style={s.resultRow}
+                        onPress={() => {
+                          setSearchQuery("");
+                          setResults([]);
+                          setSearching(false);
+                          nav.navigate("Profile" as never, { userId: item.id } as never);
+                        }}
+                      >
+                        <Image
+                          source={
+                            item.avatar_url
+                              ? { uri: item.avatar_url }
+                              : require("../../../assets/icon.png")
+                          }
+                          style={s.resultAvatar}
+                        />
+                        <View>
+                          <P style={s.resultName}>
+                            {item.firstname} {item.lastname}
+                          </P>
+                          <P style={{ color: "#666", fontSize: 12 }}>@{item.username}</P>
+                        </View>
+                      </TouchableOpacity>
+                    )}
+                  />
+                ) : (
+                  <View style={s.noResult}>
+                    <P>Aucun résultat</P>
+                  </View>
+                )}
+              </View>
+            </>
+          )}
         </View>
 
         {/* --- COVER --- */}
-        {profile.cover_url ? (
-          <Image source={{ uri: profile.cover_url }} style={s.cover} />
-        ) : (
-          <View style={[s.cover, { backgroundColor: "#111" }]} />
-        )}
+        <View style={s.coverWrap}>
+          {profile.cover_url ? (
+            <Image source={{ uri: profile.cover_url }} style={s.cover} />
+          ) : (
+            <View style={[s.cover, { backgroundColor: "#111" }]} />
+          )}
 
-        {/* --- HEADER (avatar + infos + actions) --- */}
+          {!isMe && (
+            <TouchableOpacity
+              style={s.backToMeBtn}
+              onPress={() =>
+                nav.navigate("Profile" as never, { userId: session?.user?.id } as never)
+              }
+            >
+              <FontAwesome name="user" size={16} color="#fff" />
+            </TouchableOpacity>
+          )}
+
+          {!isMe && (
+            <View style={s.bannerActions}>
+              <TouchableOpacity
+                style={s.bannerBtn}
+                onPress={() => nav.navigate("Messages" as never)}
+              >
+                <P style={s.bannerBtnTxt}>Message</P>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={s.bannerBtn}
+                onPress={toggleFollow}
+                disabled={busy}
+              >
+                <P style={s.bannerBtnTxt}>
+                  {amFollowing ? "Abonné(e)" : "S'abonner"}
+                </P>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {/* --- HEADER --- */}
         <View style={s.headerRow}>
           <Image
             source={
@@ -269,29 +395,16 @@ export default function Profile() {
             </P>
           </View>
 
-          <View style={s.actions}>
-            {isMe ? (
-              <TouchableOpacity 
+          {isMe && (
+            <View style={s.actions}>
+              <TouchableOpacity
                 style={s.outlineBtn}
-                onPress={() => nav.navigate('EditProfile' as never)}
+                onPress={() => nav.navigate("EditProfile" as never)}
               >
                 <P style={s.btnTxt}>Modifier</P>
               </TouchableOpacity>
-            ) : (
-              <>
-                <TouchableOpacity style={s.outlineBtn}>
-                  <P style={s.btnTxt}>Message</P>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={s.outlineBtn}
-                  onPress={toggleFollow}
-                  disabled={busy}
-                >
-                  <P style={s.btnTxt}>{amFollowing ? "Abonné(e)" : "S'abonner"}</P>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
+            </View>
+          )}
         </View>
 
         {/* --- TABS --- */}
@@ -359,7 +472,7 @@ export default function Profile() {
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -367,7 +480,6 @@ const s = StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: "#fff",
-    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
   },
   container: { flex: 1, backgroundColor: "#fff" },
 
@@ -384,11 +496,17 @@ const s = StyleSheet.create({
   },
   logoWrap: { flexDirection: "row", alignItems: "center" },
   logoText: { color: "#fff", fontSize: 18, fontWeight: "700", letterSpacing: 1 },
-  rightMenu: { 
-    position: "relative",
-    zIndex: 10000,
-  },
+  rightMenu: { position: "relative", zIndex: 10000 },
   iconBtn: { padding: 6 },
+  badge: {
+    position: "absolute",
+    top: 2,
+    right: 2,
+    backgroundColor: "red",
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
   dropdown: {
     position: "absolute",
     top: 45,
@@ -418,16 +536,82 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#ccc",
   },
-
-  // Bannière
-  cover: { width: "100%", height: 160 },
-
-  // Header
-  headerRow: {
+  searchWrap: {
+    position: "relative",
+    zIndex: 9999,
+  },
+  searchResults: {
+    position: "absolute",
+    top: 50,
+    left: 8,
+    right: 8,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 6,
+    maxHeight: 220,
+    zIndex: 1000,
+  },
+  resultRow: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
+    padding: 10,
+    borderBottomWidth: 1,
+    borderColor: "#eee",
   },
+  resultAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    marginRight: 10,
+  },
+  resultName: { fontSize: 14, color: "#111", fontWeight: "600" },
+  noResult: { padding: 12, alignItems: "center" },
+  overlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "transparent",
+    zIndex: 999,
+  },
+
+  // Cover
+  coverWrap: {
+    position: "relative",
+    width: "100%",
+    height: 160,
+  },
+  cover: { width: "100%", height: "100%" },
+  backToMeBtn: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    backgroundColor: "rgba(46,125,50,0.8)",
+    padding: 8,
+    borderRadius: 20,
+  },
+  bannerActions: {
+    position: "absolute",
+    bottom: 10,
+    right: 10,
+    flexDirection: "row",
+  },
+  bannerBtn: {
+    backgroundColor: "rgba(46, 125, 50, 0.47)",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  bannerBtnTxt: {
+    color: "#fff",
+    fontWeight: "600",
+  },
+
+  // Header
+  headerRow: { flexDirection: "row", alignItems: "center", padding: 16 },
   avatar: {
     width: 80,
     height: 80,
@@ -441,7 +625,7 @@ const s = StyleSheet.create({
   userInfo: { flex: 1 },
   name: { fontSize: 18, fontWeight: "bold", color: "#111" },
   counts: { marginTop: 4, fontSize: 14, color: "#666" },
-  actions: { flexDirection: "row", gap: 8 },
+  actions: { flexDirection: "row", marginLeft: 8 },
   outlineBtn: {
     borderWidth: 1,
     borderColor: "#2e7d32",
@@ -474,7 +658,8 @@ const s = StyleSheet.create({
   lbl: { fontWeight: "700", color: "#111", marginBottom: 4 },
   val: { color: "#444" },
 
-  socialWrap: { flexDirection: "row", flexWrap: "wrap", marginTop: 8, gap: 12 },
+  // Socials
+  socialWrap: { flexDirection: "row", flexWrap: "wrap", marginTop: 8 },
   socialPill: {
     width: 40,
     height: 40,
@@ -482,5 +667,7 @@ const s = StyleSheet.create({
     backgroundColor: "#eee",
     alignItems: "center",
     justifyContent: "center",
+    marginRight: 8,
+    marginBottom: 8,
   },
 });
